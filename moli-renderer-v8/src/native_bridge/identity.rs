@@ -175,6 +175,7 @@ pub(super) enum LiveCollectionQueryKind {
     ClassName,
     Name,
     WindowNamedItems,
+    DocumentNamedItems,
     DocumentAllNamedItems,
     FormControlsByName,
     FormImagesByName,
@@ -205,6 +206,7 @@ impl LiveCollectionQueryKind {
             Self::ClassName => "className",
             Self::Name => "name",
             Self::WindowNamedItems => "windowNamedItems",
+            Self::DocumentNamedItems => "documentNamedItems",
             Self::DocumentAllNamedItems => "documentAllNamedItems",
             Self::FormControlsByName => "formControlsByName",
             Self::FormImagesByName => "formImagesByName",
@@ -313,6 +315,12 @@ impl LiveCollectionDescriptor {
             form_named_image_matches(host, self.root, self.query.as_deref().unwrap_or_default())
         } else if self.query_kind == LiveCollectionQueryKind::WindowNamedItems {
             crate::native_bridge::named_access::window_named_item_handles(
+                host.dom_host(),
+                self.root,
+                self.query.as_deref().unwrap_or_default(),
+            )
+        } else if self.query_kind == LiveCollectionQueryKind::DocumentNamedItems {
+            crate::native_bridge::named_access::document_named_item_handles(
                 host.dom_host(),
                 self.root,
                 self.query.as_deref().unwrap_or_default(),
