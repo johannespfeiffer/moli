@@ -1,0 +1,127 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 31fe301..b5252f6 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -3584,6 +3584,7 @@ version = "0.1.0"
+ name = "moli-stylesheet-blocking"
+ version = "0.1.0"
+ dependencies = [
++ "cssparser",
+  "futures-util",
+  "moli-dom",
+  "moli-fetch",
+diff --git a/moli-renderer-v8/src/runtime/page_vm/tests/extracted/child_document_scripts.rs b/moli-renderer-v8/src/runtime/page_vm/tests/extracted/child_document_scripts.rs
+index 3ca7cf2..6dba912 100644
+--- a/moli-renderer-v8/src/runtime/page_vm/tests/extracted/child_document_scripts.rs
++++ b/moli-renderer-v8/src/runtime/page_vm/tests/extracted/child_document_scripts.rs
+@@ -311,6 +311,15 @@ globalThis.__childClassicWaitValue = 91;
+ }
+ #[tokio::test]
+ async fn page_vm_child_parser_blocking_classic_waits_for_preceding_stylesheet() {
++    child_parser_blocking_classic_waits_for_stylesheet("").await;
++}
++
++#[tokio::test]
++async fn page_vm_child_parser_blocking_classic_waits_for_screen_print_stylesheet() {
++    child_parser_blocking_classic_waits_for_stylesheet(r#"media="screen,print""#).await;
++}
++
++async fn child_parser_blocking_classic_waits_for_stylesheet(media: &'static str) {
+     run_page_vm_async_test(async move {
+         let (base_url, server) = spawn_concurrent_path_response_http_server(vec![(
+             "/parser-blocking.css",
+@@ -342,7 +351,7 @@ async fn page_vm_child_parser_blocking_classic_waits_for_preceding_stylesheet()
+   const frame = document.createElement("iframe");
+   frame.onload = () => globalThis.__childParserStylesheetEvents.push("load");
+   frame.srcdoc = `
+-    <link rel="stylesheet" href="{base_url}/parser-blocking.css">
++    <link rel="stylesheet" href="{base_url}/parser-blocking.css" {media}>
+     <script>
+       parent.__childParserStylesheetEvents.push(
+         "script:" + getComputedStyle(document.documentElement)
+diff --git a/moli-stylesheet-blocking/Cargo.toml b/moli-stylesheet-blocking/Cargo.toml
+index 3bd639a..9a1e394 100644
+--- a/moli-stylesheet-blocking/Cargo.toml
++++ b/moli-stylesheet-blocking/Cargo.toml
+@@ -5,6 +5,7 @@ version = "0.1.0"
+ edition = "2024"
+ 
+ [dependencies]
++cssparser = "0.38"
+ futures-util = "0.3.31"
+ moli-dom = { path = "../moli-dom" }
+ moli-fetch = { path = "../moli-fetch" }
+diff --git a/moli-stylesheet-blocking/src/discovery.rs b/moli-stylesheet-blocking/src/discovery.rs
+index 068bdb6..2f7efbb 100644
+--- a/moli-stylesheet-blocking/src/discovery.rs
++++ b/moli-stylesheet-blocking/src/discovery.rs
+@@ -505,10 +505,24 @@ fn stylesheet_type_is_supported(value: Option<&str>) -> bool {
+ }
+ 
+ fn media_blocks_scripts(media: Option<&str>) -> bool {
+-    let Some(media) = media.map(str::trim) else {
++    let Some(media) = media else {
+         return true;
+     };
+-    media.is_empty() || media.eq_ignore_ascii_case("all") || media.eq_ignore_ascii_case("screen")
++    // Keep this device-independent gate limited to unconditional screen/all queries.
++    // CSS tokenization keeps commas inside strings and blocks out of the list.
++    let mut parser = cssparser::Parser::new(media);
++    if parser.is_exhausted() {
++        return true;
++    }
++    parser
++        .parse_comma_separated_ignoring_errors(|query| {
++            let media_type = query.expect_ident()?;
++            Ok::<_, cssparser::ParseError<()>>(
++                media_type.eq_ignore_ascii_case("all") || media_type.eq_ignore_ascii_case("screen"),
++            )
++        })
++        .into_iter()
++        .any(|matches| matches)
+ }
+ 
+ pub fn collect_blocking_stylesheet_nodes_before(
+@@ -763,6 +777,42 @@ mod tests {
+         stylesheet_link_disposition, stylesheet_preload_link_request,
+     };
+ 
++    #[test]
++    fn stylesheet_media_lists_recognize_screen_and_all_members() {
++        let document_url = url::Url::parse("https://example.com/page.html").unwrap();
++        let mut host = DomHost::from_dom(NativeDom::new_html(document_url));
++        let link = host.create_element("link");
++        assert!(host.set_attribute(link, "rel", "stylesheet"));
++        assert!(host.set_attribute(link, "href", "/style.css"));
++        assert!(host.append_child(host.document_handle(), link));
++        let node_id = moli_dom::NodeId::new(link.index());
++
++        for (media, blocking) in [
++            ("", true),
++            ("screen", true),
++            ("screen,print", true),
++            ("print, screen", true),
++            (" PRINT , ScReEn ", true),
++            ("speech, ALL", true),
++            ("print, /* screen media */ screen", true),
++            (r"\73 creen,print", true),
++            ("/* an empty media list */", true),
++            ("print", false),
++            ("print, speech", false),
++            ("not screen, print", false),
++            ("screen and (color), print", false),
++            ("not all, screen", true),
++            (",print", false),
++            (r#""print,screen,speech""#, false),
++            ("(unknown: print,screen,speech)", false),
++        ] {
++            assert!(host.set_attribute(link, "media", media));
++            let disposition = stylesheet_link_disposition(&host, node_id)
++                .expect("the connected stylesheet should retain its load operation");
++            assert_eq!(disposition.is_blocking(), blocking, "media={media:?}");
++        }
++    }
++
+     #[test]
+     fn parser_created_style_imports_join_against_document_url() {
+         let base_url = url::Url::parse("https://example.com/path/page.html").unwrap();
