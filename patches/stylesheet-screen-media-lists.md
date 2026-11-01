@@ -30,14 +30,25 @@ Validation with Rust 1.96.1:
 - The focused stylesheet crate passed all 28 tests after the fix on macOS and Linux.
 - Both the existing and new child-parser HTTP regressions passed on macOS,
   verifying stylesheet installation before the classic script and subsequent load.
-- Formatting and full workspace/all-target/all-feature Clippy passed on macOS.
-- The full native Nextest run hit `cli_connection_failure_reports_curl_code_and_cause`
-  (expected curl connection failure code 7, received timeout code 28) and was stopped.
-- Linux workspace Clippy could not complete in the 8 GB validation VM. The renderer
-  test compiler was OOM-killed with eight build workers and again with one; the
-  container recorded three OOM kills.
+- All required commands ran natively on macOS arm64 at PR revision
+  `2477227fbac32cae855465f20b092262a6580f7f`, with no source changes.
+- `cargo fmt --all` and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed.
+- `cargo nextest run --no-fail-fast --test-threads 4` completed without filters or
+  additional exclusions: 22,162 tests run, 22,160 passed (one leaky), two failed,
+  and 20 skipped by the repository's normal selection. Test execution took 857
+  seconds; the command exited 100. The new stylesheet regressions passed.
+- Both failures reproduced with one test worker:
+  `cli_connection_failure_reports_curl_code_and_cause` expected curl connection
+  failure code 7 but received timeout code 28, and
+  `font_face_unicode_range_limits_layout_and_updates_after_loading` failed its
+  custom-font-versus-fallback control assertion. Both test files are unchanged by
+  the patch.
+- The passing selector test marked leaky in the full run,
+  `rejects_more_upstream_invalid_selector_shapes`, passed without a leak on its
+  individual rerun. No assertions or source code were changed during validation.
 
-The full contribution gates have not passed. The engine fix is submitted as a draft
-with these validation limitations documented.
+The full contribution gates have run, but the suite is not green. The engine fix
+remains a draft with these results documented.
 The patch addresses the stylesheet reproduction; full application startup remains
 unverified.
