@@ -1,6 +1,8 @@
 # Screen media-list patch
 
-This branch contains a patch artifact. Apply it to the engine sources before building:
+This branch contains a patch artifact. The engine fix is also available in
+[draft PR #2279](https://github.com/lexmount/moli/pull/2279).
+Apply the patch to this branch before building:
 
 ```sh
 git apply --check patches/stylesheet-screen-media-lists.patch
@@ -35,6 +37,7 @@ Validation with Rust 1.96.1:
   test compiler was OOM-killed with eight build workers and again with one; the
   container recorded three OOM kills.
 
-The full contribution gates have not passed, so no engine pull request is submitted.
+The full contribution gates have not passed. The engine fix is submitted as a draft
+with these validation limitations documented.
 The patch addresses the stylesheet reproduction; full application startup remains
 unverified.
